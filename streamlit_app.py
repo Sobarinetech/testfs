@@ -5,109 +5,140 @@ from io import BytesIO
 import tempfile
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
 
-# Function to generate the PDF factsheet
-def generate_pdf(data, performance_chart_path):
+# Generate a factsheet PDF
+def generate_pdf(data, performance_chart_path, sector_chart_path):
     buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    
-    # Title
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(30, 750, "Professional Factsheet")
-    
-    # Key holdings section
-    c.setFont("Helvetica", 12)
-    c.drawString(30, 720, "Principal Holdings (Top Equity Holdings):")
-    holdings = data['Holdings'].tolist()
-    y = 700
-    for holding in holdings:
-        c.drawString(50, y, f"- {holding}")
-        y -= 20
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    elements = []
 
-    # Fund performance
-    c.drawString(30, y - 10, "Fund Performance (Year-to-Date):")
-    performance_data = data[['Month', 'Portfolio Performance']].to_dict(orient='records')
-    y -= 40
-    for record in performance_data:
-        c.drawString(50, y, f"{record['Month']}: {record['Portfolio Performance']}%")
-        y -= 20
+    # Title section
+    title_data = [
+        ["Fund Factsheet"],
+        [f"Fund Name: {data['Fund Name'][0]}"],
+        [f"Fund Manager: {data['Fund Manager'][0]}"],
+        [f"Investment Objective: {data['Investment Objective'][0]}"],
+        [f"Expense Ratio: {data['Expense Ratio'][0]}%"],
+        [f"Assets Under Management: ${data['Assets Under Management'][0]} Million"]
+    ]
+    title_table = Table(title_data)
+    title_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+    ]))
+    elements.append(title_table)
 
-    # Insert the performance chart
-    c.drawImage(performance_chart_path, 30, y - 150, width=540, height=200)
+    # Holdings section
+    elements.append(Table([["Principal Holdings (Top Equity Holdings):"]]))
+    holdings = [[holding] for holding in data['Holdings']]
+    holdings_table = Table(holdings)
+    elements.append(holdings_table)
 
-    c.save()
+    # Add charts
+    elements.append(Table([["Fund Performance Chart"]]))
+    elements.append(performance_chart_path)
+    elements.append(Table([["Sector Allocation Chart"]]))
+    elements.append(sector_chart_path)
+
+    doc.build(elements)
     buffer.seek(0)
     return buffer
 
-# Function to generate a sample performance chart
+
+
+
+# Generate performance chart
 def generate_performance_chart(data):
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(data['Month'], data['Portfolio Performance'], label="Portfolio Performance", marker='o')
-    ax.set_title("Fund Performance")
-    ax.set_xlabel("Month")
-    ax.set_ylabel("Performance (%)")
-    ax.legend()
-    plt.tight_layout()
+    plt.figure(figsize=(8, 4))
+    plt.plot(data['Month'], data['Portfolio Performance'], marker='o', label='Portfolio Performance')
+    plt.title('Fund Performance')
+    plt.xlabel('Month')
+    plt.ylabel('Performance (%)')
+    plt.legend()
+    plt.grid(True)
+    
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    plt.savefig(temp_file.name)
+    plt.close()
+    return temp_file.name
 
-    # Save the chart to a temporary file and return the path
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
-        plt.savefig(tmp_file.name, format='png')
-        tmp_file_path = tmp_file.name
-    return tmp_file_path
+# Generate sector allocation chart
+def generate_sector_chart(data):
+    sectors = data['Sector Allocations'].str.split(', ', expand=True)
+    sector_labels = sectors[0]
+    sector_values = sectors[1].astype(float)
+    
+    plt.figure(figsize=(6, 6))
+    plt.pie(sector_values, labels=sector_labels, autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired.colors)
+    plt.title('Sector Allocations')
+    
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    plt.savefig(temp_file.name)
+    plt.close()
+    return temp_file.name
 
-# Function to generate a downloadable CSV template
+# Generate CSV template
 def generate_csv_template():
     template_data = {
-        "Month": ["January", "February", "March", "April", "May", "June"],
-        "Portfolio Performance": [1.5, 2.3, 3.8, -1.2, 0.5, -0.8],
-        "Holdings": ["Company A", "Company B", "Company C", "Company D", "Company E", "Company F"]
+        'Fund Name': ['Sample Fund'],
+        'Fund Manager': ['John Doe'],
+        'Investment Objective': ['Maximize long-term growth.'],
+        'Expense Ratio': [0.75],
+        'Assets Under Management': [500],
+        'Month': ['January', 'February', 'March'],
+        'Portfolio Performance': [1.5, 2.3, 3.1],
+        'Holdings': ['Company A, Company B, Company C'],
+        'Sector Allocations': ['Technology, 50', 'Healthcare, 30', 'Finance, 20']
     }
-    template_df = pd.DataFrame(template_data)
-    return template_df
+    return pd.DataFrame(template_data)
 
 # Streamlit App
 st.title("Professional Factsheet Generator")
 
-# CSV Template Download
-st.subheader("Download CSV Template")
-if st.button("Download Template"):
+# Template Download
+st.subheader("Download Template")
+if st.button("Download CSV Template"):
     template_df = generate_csv_template()
     csv_buffer = BytesIO()
     template_df.to_csv(csv_buffer, index=False)
     csv_buffer.seek(0)
     st.download_button(
-        label="Download Template CSV",
+        label="Download Template",
         data=csv_buffer,
         file_name="factsheet_template.csv",
         mime="text/csv"
     )
 
-# Upload Section
-st.subheader("Upload CSV Data")
-uploaded_file = st.file_uploader("Upload a CSV file with factsheet data", type=["csv"])
+# File Upload Section
+st.subheader("Upload CSV File")
+uploaded_file = st.file_uploader("Upload a CSV file with the required data", type=['csv'])
 
 if uploaded_file:
     data = pd.read_csv(uploaded_file)
     st.write("Uploaded Data Preview:")
     st.write(data)
 
-    # Validate columns
-    required_columns = {"Month", "Portfolio Performance", "Holdings"}
-    if not required_columns.issubset(data.columns):
-        st.error(f"The uploaded CSV must contain the following columns: {', '.join(required_columns)}")
-    else:
-        # Generate the performance chart
-        performance_chart_path = generate_performance_chart(data)
+    # Generate Charts
+    performance_chart_path = generate_performance_chart(data)
+    sector_chart_path = generate_sector_chart(data)
 
-        # Display the performance chart
-        st.image(performance_chart_path, caption="Generated Performance Chart")
+    # Display Charts
+    st.image(performance_chart_path, caption="Fund Performance Chart")
+    st.image(sector_chart_path, caption="Sector Allocation Chart")
 
-        # Generate PDF
-        st.subheader("Download Factsheet")
-        pdf_buffer = generate_pdf(data, performance_chart_path)
-        st.download_button(
-            label="Download Factsheet PDF",
-            data=pdf_buffer,
-            file_name="factsheet.pdf",
-            mime="application/pdf"
-        )
+    # Generate PDF
+    pdf_buffer = generate_pdf(data, performance_chart_path, sector_chart_path)
+    st.download_button(
+        label="Download Factsheet PDF",
+        data=pdf_buffer,
+        file_name="factsheet.pdf",
+        mime="application/pdf"
+    )
