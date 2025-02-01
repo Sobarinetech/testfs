@@ -2,11 +2,12 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
+import tempfile
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 # Function to generate the PDF factsheet
-def generate_pdf(data, performance_chart):
+def generate_pdf(data, performance_chart_path):
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     
@@ -32,7 +33,7 @@ def generate_pdf(data, performance_chart):
         y -= 20
 
     # Insert the performance chart
-    c.drawImage(performance_chart, 30, y - 150, width=540, height=200)
+    c.drawImage(performance_chart_path, 30, y - 150, width=540, height=200)
 
     c.save()
     buffer.seek(0)
@@ -47,10 +48,12 @@ def generate_performance_chart(data):
     ax.set_ylabel("Performance (%)")
     ax.legend()
     plt.tight_layout()
-    buf = BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    return buf
+
+    # Save the chart to a temporary file and return the path
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
+        plt.savefig(tmp_file.name, format='png')
+        tmp_file_path = tmp_file.name
+    return tmp_file_path
 
 # Function to generate a downloadable CSV template
 def generate_csv_template():
@@ -94,14 +97,14 @@ if uploaded_file:
         st.error(f"The uploaded CSV must contain the following columns: {', '.join(required_columns)}")
     else:
         # Generate the performance chart
-        performance_chart = generate_performance_chart(data)
+        performance_chart_path = generate_performance_chart(data)
 
         # Display the performance chart
-        st.image(performance_chart, caption="Generated Performance Chart")
+        st.image(performance_chart_path, caption="Generated Performance Chart")
 
         # Generate PDF
         st.subheader("Download Factsheet")
-        pdf_buffer = generate_pdf(data, performance_chart)
+        pdf_buffer = generate_pdf(data, performance_chart_path)
         st.download_button(
             label="Download Factsheet PDF",
             data=pdf_buffer,
